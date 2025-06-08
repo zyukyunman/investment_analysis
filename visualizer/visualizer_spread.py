@@ -7,9 +7,10 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
 
-# 将项目根目录添加到Python路径
+# 将项目根目录添加到Python路径，以便跨目录调用模块
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-import common.config as config
+
+from common import config
 
 def _set_matplotlib_font():
     """

@@ -6,6 +6,11 @@ import sys
 import pandas as pd
 from datetime import datetime
 import akshare as ak
+
+# 将项目根目录添加到Python路径，以便跨目录调用模块
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from common import utils_ts
 import common.config as config
 from common.utils import check_if_update_should_be_skipped, find_existing_data_file
 

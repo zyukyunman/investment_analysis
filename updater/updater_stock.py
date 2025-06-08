@@ -5,19 +5,13 @@ import os
 import sys
 import pandas as pd
 from datetime import datetime
-import tushare as ts
-import common.config as config
-from common.utils import check_if_update_should_be_skipped
 
-# 将项目根目录添加到Python路径
+# 将项目根目录添加到Python路径，以便跨目录调用模块
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-def _initialize_tushare():
-    """使用config中的token初始化tushare"""
-    if config.TUSHARE_TOKEN == 'your_token_here' or not config.TUSHARE_TOKEN:
-        raise ValueError("Tushare token 未在 config.py 中配置。请前往 https://tushare.pro/user/token 获取。")
-    ts.set_token(config.TUSHARE_TOKEN)
-    return ts.pro_api()
+from common import utils_ts
+import common.config as config
+from common.utils import check_if_update_should_be_skipped
 
 def _get_tushare_data(pro, ts_code, start_date):
     """从Tushare获取所有需要的原始数据"""
@@ -26,9 +20,9 @@ def _get_tushare_data(pro, ts_code, start_date):
     end_date = datetime.now().strftime('%Y%m%d')
     ma_params = [20, 51, 120, 250]
 
-    df_daily = ts.pro_bar(ts_code=ts_code, start_date=start_date, end_date=end_date, asset='E', freq='D', ma=ma_params)
-    df_qfq = ts.pro_bar(ts_code=ts_code, start_date=start_date, end_date=end_date, asset='E', freq='D', adj='qfq')
-    df_hfq = ts.pro_bar(ts_code=ts_code, start_date=start_date, end_date=end_date, asset='E', freq='D', adj='hfq')
+    df_daily = pro.pro_bar(ts_code=ts_code, start_date=start_date, end_date=end_date, asset='E', freq='D', ma=ma_params)
+    df_qfq = pro.pro_bar(ts_code=ts_code, start_date=start_date, end_date=end_date, asset='E', freq='D', adj='qfq')
+    df_hfq = pro.pro_bar(ts_code=ts_code, start_date=start_date, end_date=end_date, asset='E', freq='D', adj='hfq')
     df_basic = pro.daily_basic(ts_code=ts_code, start_date=start_date, end_date=end_date)
 
     print("正在合并 Tushare 数据...")
@@ -105,7 +99,7 @@ def update_stock_data():
     ):
         return # 如果通用函数决定跳过，则直接退出
 
-    pro = _initialize_tushare()
+    pro = utils_ts.initialize_tushare()
     if not pro:
         print("Tushare 初始化失败，更新任务终止。")
         return
