@@ -34,7 +34,7 @@ def visualize_spread():
     _set_matplotlib_font()
     
     try:
-        df = pd.read_csv(config.SPREAD_ANALYSIS_CSV)
+        df = pd.read_csv(config.get_spread_analysis_csv())
         df['date'] = pd.to_datetime(df['date'])
     except (FileNotFoundError, KeyError) as e:
         print(f"[错误] 加载或处理分析文件时出错: {e}。")
@@ -43,7 +43,7 @@ def visualize_spread():
     # --- 任务1: 生成All-in-One合并图 ---
     print("正在生成All-in-One合并图表...")
     fig1, ax1 = plt.subplots(figsize=(20, 12))
-    fig1.suptitle(f'{config.STOCK_NAME}({config.STOCK_CODE}) 全指标合并分析图', fontsize=20, y=0.92)
+    fig1.suptitle(f'{config.get_stock_name()}({config.get_stock_code()}) 全指标合并分析图', fontsize=20, y=0.92)
 
     # --- 终极修复：手动控制所有Y轴的层级和透明度 ---
 
@@ -77,7 +77,7 @@ def visualize_spread():
     ax1.grid(True, linestyle='--', alpha=0.6, zorder=1)
     
     # 保存图1
-    output_path_with_price = config.SPREAD_PLOT_IMAGE_PATH
+    output_path_with_price = config.get_spread_plot_image_path()
     os.makedirs(os.path.dirname(output_path_with_price), exist_ok=True)
     plt.savefig(output_path_with_price, dpi=300, bbox_inches='tight')
     plt.close(fig1)
@@ -86,7 +86,7 @@ def visualize_spread():
     # --- 任务2: 生成独立核心指标图 ---
     print("正在生成独立的核心指标图表...")
     fig2, ax_core = plt.subplots(figsize=(20, 10))
-    fig2.suptitle(f'{config.STOCK_NAME}({config.STOCK_CODE}) 核心指标分析', fontsize=20, y=0.92)
+    fig2.suptitle(f'{config.get_stock_name()}({config.get_stock_code()}) 核心指标分析', fontsize=20, y=0.92)
     
     ax_core_twin = ax_core.twinx()
     p_core2, = ax_core_twin.plot(df['date'], df['股债性价比'], color='lightgrey', label='股债性价比', zorder=1)
@@ -107,7 +107,7 @@ def visualize_spread():
     ax_core.grid(True, linestyle='--', alpha=0.6)
 
     # 保存图2
-    output_path_standalone = config.SPREAD_PLOT_IMAGE_STANDALONE_PATH
+    output_path_standalone = config.get_spread_plot_image_standalone_path()
     os.makedirs(os.path.dirname(output_path_standalone), exist_ok=True)
     plt.savefig(output_path_standalone, dpi=300, bbox_inches='tight')
     plt.close(fig2)

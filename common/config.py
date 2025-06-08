@@ -3,6 +3,9 @@
 # 日常使用时建议设为False以提高效率。
 FORCE_FULL_DATA_REFRESH = False 
 
+# 是否开启调试日志。如果设为True，在更新数据时会打印详细的计算过程。
+DEBUG_LOG_ENABLED = False
+
 # --- 数据获取网络配置 ---
 # [通用] 每次从网上抓取数据时的通用延迟时间（秒），防止IP被封
 FETCH_DELAY_SECONDS = 1
@@ -22,9 +25,30 @@ DATA_START_DATE = "1998-01-01"
 # ----------------------------------------------------------------
 
 # --- 股票与市场配置 ---
-STOCK_CODE = "002807"         # 要分析的股票代码 (jiangyin_bank)
-STOCK_NAME = "江阴银行"        # 股票中文名 (用于图表标题)
+# 默认股票配置，可以被程序调用时的参数覆盖
+DEFAULT_STOCK_CODE = "002807"  # 默认分析的股票代码 (jiangyin_bank)
 BENCHMARK_INDEX = "000300"  # 对比基准指数 (e.g., 沪深300)
+
+# 当前分析的股票代码和名称，可以通过main函数传入覆盖默认值
+_CURRENT_STOCK_CODE = DEFAULT_STOCK_CODE
+_CURRENT_STOCK_NAME = ""
+
+from common import utils_ts
+def set_stock_info(stock_code=None):
+    """设置当前分析的股票信息"""
+    global _CURRENT_STOCK_CODE, _CURRENT_STOCK_NAME
+    if stock_code:
+        _CURRENT_STOCK_CODE = stock_code
+    stock_info = utils_ts.get_stock_info(_CURRENT_STOCK_CODE)
+    _CURRENT_STOCK_NAME = stock_info['name'].iloc[0]
+
+def get_stock_code():
+    """获取当前分析的股票代码"""
+    return _CURRENT_STOCK_CODE
+
+def get_stock_name():
+    """获取当前分析的股票名称"""
+    return _CURRENT_STOCK_NAME
 
 # ----------------------------------------------------------------
 
@@ -40,13 +64,27 @@ DATA_HAND_UPDATE_DIR = os.path.join(DATA_DIR, "hand") # 手动更新数据存放
 
 # 由 updater 脚本产出的数据文件路径
 TREASURY_BOND_CSV = os.path.join(DATA_AUTO_UPDATE_DIR, "treasury_bond_rates.csv")
-STOCK_HISTORY_CSV = os.path.join(DATA_AUTO_UPDATE_DIR, f"{STOCK_CODE}_history.csv")
+
+# 动态生成的文件路径，基于当前选择的股票代码
+def get_stock_history_csv():
+    """获取股票历史数据CSV文件路径"""
+    return os.path.join(DATA_AUTO_UPDATE_DIR, f"{get_stock_code()}_history.csv")
+
+def get_spread_analysis_csv():
+    """获取股债利差分析结果CSV文件路径"""
+    return os.path.join(VISUALIZER_RESULTS_DIR, f"{get_stock_code()}_spread_analysis.csv")
+
+def get_spread_plot_image_path():
+    """获取带股价的股债利差图表文件路径"""
+    return os.path.join(VISUALIZER_RESULTS_DIR, f"{get_stock_code()}_spread_plot_with_price.png")
+
+def get_spread_plot_image_standalone_path():
+    """获取独立的股债利差图表文件路径"""
+    return os.path.join(VISUALIZER_RESULTS_DIR, f"{get_stock_code()}_spread_plot_standalone.png")
+
+def get_plot_image_path():
+    """获取通用图表文件路径"""
+    return os.path.join(VISUALIZER_RESULTS_DIR, f"{get_stock_code()}_plot.png")
 
 # 分析工具模块的产出路径 (由 visualizer/ 目录下的脚本使用)
 VISUALIZER_RESULTS_DIR = os.path.join(BASE_DIR, "visualizer", "results")
-# [calculator_spread] 由股债利差计算器生成的分析结果文件
-SPREAD_ANALYSIS_CSV = os.path.join(VISUALIZER_RESULTS_DIR, f"{STOCK_CODE}_spread_analysis.csv")
-# [visualizer_spread] 由股债利差可视化工具生成的图表文件
-SPREAD_PLOT_IMAGE_PATH = os.path.join(VISUALIZER_RESULTS_DIR, f"{STOCK_CODE}_spread_plot_with_price.png")
-SPREAD_PLOT_IMAGE_STANDALONE_PATH = os.path.join(VISUALIZER_RESULTS_DIR, f"{STOCK_CODE}_spread_plot_standalone.png")
-PLOT_IMAGE_PATH = os.path.join(VISUALIZER_RESULTS_DIR, f"{STOCK_CODE}_plot.png")
