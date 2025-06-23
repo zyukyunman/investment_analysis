@@ -62,29 +62,32 @@ DATA_DIR = os.path.join(BASE_DIR, "data")               # 统一的数据根目�
 DATA_AUTO_UPDATE_DIR = os.path.join(DATA_DIR, "auto") # updater脚本自动更新的数据存放处
 DATA_HAND_UPDATE_DIR = os.path.join(DATA_DIR, "hand") # 手动更新数据存放处
 
+# 定义一个静态的、指向 stocks.json 的路径
+STOCKS_JSON_PATH = os.path.join(DATA_DIR, "stocks.json")
+
 # 由 updater 脚本产出的数据文件路径
 TREASURY_BOND_CSV = os.path.join(DATA_AUTO_UPDATE_DIR, "treasury_bond_rates.csv")
 
 # 动态生成的文件路径，基于当前选择的股票代码
 def get_stock_history_csv():
     """获取股票历史数据CSV文件路径"""
-    return os.path.join(DATA_AUTO_UPDATE_DIR, f"{get_stock_code()}_history.csv")
+    return os.path.join(DATA_AUTO_UPDATE_DIR, f"{get_stock_code()}_{get_stock_name()}_history.csv")
 
 def get_spread_analysis_csv():
     """获取股债利差分析结果CSV文件路径"""
-    return os.path.join(VISUALIZER_RESULTS_DIR, f"{get_stock_code()}_spread_analysis.csv")
+    return os.path.join(VISUALIZER_RESULTS_DIR, f"{get_stock_code()}_{get_stock_name()}_spread_analysis.csv")
 
 def get_spread_plot_image_path():
     """获取带股价的股债利差图表文件路径"""
-    return os.path.join(VISUALIZER_RESULTS_DIR, f"{get_stock_code()}_spread_plot_with_price.png")
+    return os.path.join(VISUALIZER_RESULTS_DIR, f"{get_stock_code()}_{get_stock_name()}_spread_plot_with_price.png")
 
 def get_spread_plot_image_standalone_path():
     """获取独立的股债利差图表文件路径"""
-    return os.path.join(VISUALIZER_RESULTS_DIR, f"{get_stock_code()}_spread_plot_standalone.png")
+    return os.path.join(VISUALIZER_RESULTS_DIR, f"{get_stock_code()}_{get_stock_name()}_spread_plot_standalone.png")
 
 def get_plot_image_path():
     """获取通用图表文件路径"""
-    return os.path.join(VISUALIZER_RESULTS_DIR, f"{get_stock_code()}_plot.png")
+    return os.path.join(VISUALIZER_RESULTS_DIR, f"{get_stock_code()}_{get_stock_name()}_plot.png")
 
 # 分析工具模块的产出路径 (由 visualizer/ 目录下的脚本使用)
 VISUALIZER_RESULTS_DIR = os.path.join(BASE_DIR, "visualizer", "results")

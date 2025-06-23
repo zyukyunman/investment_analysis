@@ -2,6 +2,9 @@ import pandas as pd
 import os
 from datetime import datetime, timedelta
 import sys
+import platform
+import matplotlib.pyplot as plt
+from matplotlib import font_manager
 
 # 添加项目根目录到系统路径
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -43,6 +46,10 @@ def check_if_update_should_be_skipped(file_path, date_column_name, force_refresh
     :param weekend_no_update: 是否考虑周末不更新数据的情况。
     :return: 如果应跳过更新，则返回 True；否则返回 False。
     """
+    if not file_path:
+        # 如果文件路径为空或None，说明文件不存在，必须从网络获取，不能跳过
+        return False
+        
     if force_refresh_flag:
         print("配置中已设置强制刷新，将执行网络更新。")
         return False
@@ -104,3 +111,35 @@ def check_if_update_should_be_skipped(file_path, date_column_name, force_refresh
     
     # 默认情况下，需要更新
     return False
+
+def set_chinese_font():
+    """
+    自动设置支持中文的字体，以确保图表在不同操作系统上都能正确显示中文。
+    """
+    os_type = platform.system()
+    
+    if os_type == 'Darwin':  # macOS
+        font_names = ['Hei', 'Hiragino Sans GB', 'STHeiti', 'Heiti SC', 'Songti SC', 'Arial Unicode MS']
+    elif os_type == 'Windows':
+        font_names = ['SimHei', 'Microsoft YaHei', 'DengXian']
+    else:  # Linux
+        font_names = ['WenQuanYi Micro Hei', 'WenQuanYi Zen Hei', 'DejaVu Sans', 'Droid Sans Fallback']
+        
+    for font_name in font_names:
+        # 使用font_manager查找字体，如果找到则设置并返回
+        if font_manager.findfont(font_name, fallback_to_default=False):
+            plt.rcParams['font.sans-serif'] = [font_name]
+            plt.rcParams['axes.unicode_minus'] = False  # 正确显示负号
+            print(f"Matplotlib 字体已设置为 '{font_name}' 以支持中文。")
+            return
+
+    # 如果上述字体都未找到，给出警告和建议
+    print("警告：在您的系统上未找到推荐的中文字体。")
+    print("图表中的中文可能无法正常显示。")
+    print("建议您根据操作系统安装以下字体之一：")
+    if os_type == 'Darwin':
+        print(" - macOS: 'PingFang SC' (默认), 'STHeiti', 'Heiti SC'")
+    elif os_type == 'Windows':
+        print(" - Windows: 'SimHei' (黑体), 'Microsoft YaHei' (微软雅黑)")
+    else:
+        print(" - Linux: 'WenQuanYi Micro Hei' 或 'WenQuanYi Zen Hei' (可通过包管理器安装)")

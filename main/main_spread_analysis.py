@@ -64,7 +64,7 @@ def run_spread_analysis_pipeline(stock_code=None):
     print(f"=   {current_stock_name}({current_stock_code}) 股债利差分析流程执行完毕！     =")
     print("==========================================")
 
-def load_stocks_from_json(json_file='data/stocks.json'):
+def load_stocks_from_json(json_file=None):
     """
     从JSON文件加载股票列表
     
@@ -74,6 +74,9 @@ def load_stocks_from_json(json_file='data/stocks.json'):
     返回:
         dict: 股票代码和名称的映射字典
     """
+    if json_file is None:
+        json_file = config.STOCKS_JSON_PATH
+        
     try:
         if not os.path.exists(json_file):
             print(f"股票JSON文件 {json_file} 不存在")
@@ -88,7 +91,7 @@ def load_stocks_from_json(json_file='data/stocks.json'):
         print(f"加载股票JSON文件失败: {e}")
         return {}
 
-def filter_stocks_by_json(stocks_list, json_file='data/stocks.json'):
+def filter_stocks_by_json(stocks_list, json_file=None):
     """
     根据JSON文件过滤股票列表
     
@@ -99,6 +102,9 @@ def filter_stocks_by_json(stocks_list, json_file='data/stocks.json'):
     返回:
         list: 过滤后的股票列表
     """
+    if json_file is None:
+        json_file = config.STOCKS_JSON_PATH
+
     # 加载JSON文件中的股票
     json_stocks = load_stocks_from_json(json_file)
     if not json_stocks:
@@ -177,7 +183,7 @@ def main():
     parser.add_argument('--list_industries', action='store_true', help='列出所有申万行业')
     parser.add_argument('--industry_level', type=str, default='L1', choices=['L1', 'L2', 'L3'], help='申万行业级别：L1-一级，L2-二级，L3-三级')
     parser.add_argument('--max_workers', type=int, default=1, help='并行执行的最大线程数')
-    parser.add_argument('--stocks_json', type=str, default='data/stocks.json', help='股票JSON文件路径')
+    parser.add_argument('--stocks_json', type=str, default=config.STOCKS_JSON_PATH, help='股票JSON文件路径')
     parser.add_argument('--filter', action='store_true', help='是否过滤股票列表，只分析JSON文件中的股票')
     
     args = parser.parse_args()

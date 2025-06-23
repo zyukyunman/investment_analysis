@@ -11,18 +11,7 @@ import matplotlib.dates as mdates
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from common import config
-
-def _set_matplotlib_font():
-    """
-    设置Matplotlib字体以支持中文显示。
-    """
-    try:
-        plt.rcParams['font.sans-serif'] = ['SimHei']  # 'SimHei' 是黑体
-        plt.rcParams['axes.unicode_minus'] = False  # 解决负号'-'显示为方块的问题
-        print("Matplotlib 字体已设置为 'SimHei' 以支持中文。")
-    except Exception as e:
-        print(f"设置中文字体失败，图表中的中文可能无法正常显示。错误: {e}")
-        print("请确保您的系统中安装了 'SimHei' 字体，或在代码中更换为其他已安装的中文字体。")
+from common.utils import set_chinese_font
 
 def visualize_spread():
     """
@@ -31,7 +20,7 @@ def visualize_spread():
     2. 独立核心指标图: 只包含温度计、性价比 (双Y轴)
     """
     print("\n--- 开始执行结果可视化任务 ---")
-    _set_matplotlib_font()
+    set_chinese_font()
     
     try:
         df = pd.read_csv(config.get_spread_analysis_csv())
