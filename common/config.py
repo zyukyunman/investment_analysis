@@ -40,7 +40,11 @@ def set_stock_info(stock_code=None):
     if stock_code:
         _CURRENT_STOCK_CODE = stock_code
     stock_info = utils_ts.get_stock_info(_CURRENT_STOCK_CODE)
-    _CURRENT_STOCK_NAME = stock_info['name'].iloc[0]
+    if not stock_info.empty:
+        _CURRENT_STOCK_NAME = stock_info['name'].iloc[0]
+    else:
+        # 如果在列表中找不到该股票，提供一个默认名称，避免程序崩溃
+        _CURRENT_STOCK_NAME = "未知股票"
 
 def get_stock_code():
     """获取当前分析的股票代码"""

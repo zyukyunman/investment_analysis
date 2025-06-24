@@ -2,4 +2,5 @@ requests
 pandas
 openpyxl
 matplotlib
-akshare 
+akshare
+tushare 
