@@ -6,6 +6,8 @@ import sys
 import pandas as pd
 from datetime import datetime
 import argparse
+import talib
+import subprocess
 
 # 将项目根目录添加到Python路径，以便跨目录调用模块
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -53,36 +55,65 @@ def _get_tushare_data(pro, ts_code, start_date):
     return merged_df.sort_values(by='trade_date').reset_index(drop=True), ma_params
 
 def _get_dividend_data(pro, ts_code):
-    """获取指定股票代码的分红和送转股数据，并处理成年度映射字典"""
-    print(f"正在获取 {ts_code} 的分红及送转股数据...")
-    # 请求Tushare接口，获取所有分红记录
-    dividend_df = pro.dividend(ts_code=ts_code, fields='end_date,cash_div_tax,stk_bo_rate,stk_co_rate,div_proc')
-    print(f"获取到 {len(dividend_df)} 条原始分红记录。")
+    """获取并处理分红数据，返回聚合后的年度数据、年度定稿标记和季度数据。"""
+    print("  - 正在通过 Tushare SDK 获取原始分红数据...")
+    try:
+        # 尝试获取所有历史分红数据
+        dividend_df = pro.dividend(ts_code=ts_code)
+        print(f"  - 成功获取 {len(dividend_df)} 条原始分红记录。")
+    except Exception as e:
+        print(f"  - 调用 Tushare dividend 接口失败: {e}")
+        return {}, {}, {}
 
     if dividend_df.empty:
         print("未找到该股票的任何分红数据。")
-        return {}
+        return {}, {}, {}
 
     # --- 核心整合逻辑 ---
-    # 1. 数据清洗：删除end_date为空的记录，并将关键数值列的NaN填充为0
-    dividend_df.dropna(subset=['end_date'], inplace=True)
-    dividend_df[['cash_div_tax', 'stk_bo_rate', 'stk_co_rate']] = dividend_df[['cash_div_tax', 'stk_bo_rate', 'stk_co_rate']].fillna(0)
-
-    # 2. 优先级处理：根据'div_proc'字段确定每个end_date唯一有效的分红方案
-    # 定义优先级顺序
-    proc_priority = ['实施', '股东大会通过', '预案']
+    # 1. 筛选和清洗
+    # 只保留必要的字段，并过滤掉没有实际分红或送转的记录
+    required_cols = ['end_date', 'div_proc', 'cash_div_tax', 'stk_bo_rate', 'stk_co_rate']
+    dividend_df = dividend_df[required_cols].dropna(subset=['end_date'])
+    dividend_df = dividend_df[
+        (dividend_df['cash_div_tax'] > 0) | 
+        (dividend_df['stk_bo_rate'] > 0) | 
+        (dividend_df['stk_co_rate'] > 0)
+    ]
+    if dividend_df.empty:
+        print("过滤后无有效的(有金额/比例的)分红方案。")
+        return {}, {}, {}
+    
+    # 2. 按方案进度设置优先级 (重要逻辑)
+    proc_priority = ['实施', '股东大会通过', '预案', '预披露']
     # 将div_proc转换为带有优先级的分类类型
     dividend_df['div_proc'] = pd.Categorical(dividend_df['div_proc'], categories=proc_priority, ordered=True)
 
     # 按end_date和方案进度排序，然后对每个end_date保留优先级最高的记录
     dividend_df.sort_values(by=['end_date', 'div_proc'], inplace=True)
     unique_dividend_df = dividend_df.drop_duplicates(subset='end_date', keep='first').copy()
-    print(f"按优先级['实施' > '股东大会通过' > '预案']去重后，剩余 {len(unique_dividend_df)} 条有效分红方案。")
+    print(f"按优先级['实施' > '股东大会通过' > '预案' > '预披露']去重后，剩余 {len(unique_dividend_df)} 条有效分红方案。")
 
     if unique_dividend_df.empty:
         print("在所有记录中未找到可用的分红方案。")
-        return {}
+        return {}, {}, {}
     
+    # --- 检查每个分红年度是否包含年末(12-30或12-31)的记录，这标志着年报分红 ---
+    has_year_end_dividend = {}
+    # 先将end_date转为datetime，以提取年份
+    unique_dividend_df['end_date_dt'] = pd.to_datetime(unique_dividend_df['end_date'])
+    unique_dividend_df['year'] = unique_dividend_df['end_date_dt'].dt.year
+
+    # 检查每个年份是否有以 '1231' 或 '1230' 结尾的end_date (Tushare返回的是YYYYMMDD字符串)
+    year_end_records = unique_dividend_df[
+        unique_dividend_df['end_date'].str.endswith('1231') |
+        unique_dividend_df['end_date'].str.endswith('1230')
+    ]
+    finalized_years = set(year_end_records['year'].unique())
+
+    all_years = unique_dividend_df['year'].unique()
+    for year in all_years:
+        has_year_end_dividend[year] = year in finalized_years
+
     # 3. 年度聚合：将同一年份的多次分红（如中报、年报）合并
     # 将end_date转换为datetime对象，以便按年份分组
     unique_dividend_df['end_date'] = pd.to_datetime(unique_dividend_df['end_date'])
@@ -95,8 +126,32 @@ def _get_dividend_data(pro, ts_code):
         'stk_co_rate': 'sum'
     }).to_dict('index') # 'index'使得结果是 {year: {field: value}} 的形式
     
-    print("年度分红数据聚合完成。")
-    return annual_data
+    # --- 为方法二准备数据：按年和季度聚合，保留最高优先级的记录 ---
+    # 1. 识别季度
+    # Tushare的end_date月份通常是 03, 06, 09, 12，分别对应Q1, Q2, Q3, Q4(年报)
+    unique_dividend_df['quarter'] = unique_dividend_df['end_date_dt'].dt.month.apply(lambda m: m // 3)
+    
+    # 2. 按年、季度、优先级排序，然后为每个季度保留唯一记录
+    quarterly_unique_df = unique_dividend_df.sort_values(
+        by=['year', 'quarter', 'div_proc'], 
+        ascending=[True, True, True] # proc的category类型已定义优先级
+    ).drop_duplicates(subset=['year', 'quarter'], keep='first')
+
+    # 3. 转换为更易于查询的字典格式: {year: {quarter: data}}
+    quarterly_data = {}
+    for _, row in quarterly_unique_df.iterrows():
+        year = row['year']
+        quarter = row['quarter']
+        if year not in quarterly_data:
+            quarterly_data[year] = {}
+        quarterly_data[year][quarter] = {
+            'cash_div_tax': row['cash_div_tax'],
+            'stk_bo_rate': row['stk_bo_rate'],
+            'stk_co_rate': row['stk_co_rate']
+        }
+    
+    print("年度和季度分红数据聚合完成。")
+    return annual_data, has_year_end_dividend, quarterly_data
 
 def update_stock_data():
     """主函数：更新个股历史数据"""
@@ -128,9 +183,6 @@ def update_stock_data():
         # 获取原始数据和均线参数
         print(f"将使用股票代码: {ts_code} 获取历史行情数据")
         df, ma_params = _get_tushare_data(pro, ts_code, start_date)
-        # 重新启用分红数据获取
-        print(f"将使用股票代码: {ts_code} 获取历史分红数据")
-        dividend_map = _get_dividend_data(pro, ts_code)
 
         print("正在处理和丰富数据...")
         
@@ -165,55 +217,12 @@ def update_stock_data():
         df.rename(columns=rename_map, inplace=True)
 
         # --- 第二步：数据计算与衍生 (再创造) ---
-        print("正在计算自定义动态股息率...")
-        df['year'] = df['交易日期'].dt.year
-        total_rows = len(df) # 获取总行数以便于判断最后一条记录
-
-        def calculate_custom_dividend(row):
-            # 只有在启用DEBUG模式且是最后一条记录时才打印详细日志
-            is_debug_log_for_this_row = config.DEBUG_LOG_ENABLED and row.name == total_rows - 1
-
-            # 查找上一年的分红和送转股数据
-            last_year_data = dividend_map.get(row['year'] - 1)
-    
-            if not last_year_data:
-                if is_debug_log_for_this_row:
-                    print(f"  - {row['year'] - 1} 年无分红数据，动态股息率计为 0")
-                return 0
-
-            # 使用前复权收盘价作为计算基准，更为稳定
-            current_price = row['开盘价(元)']
-
-            if current_price <= 0:
-                if is_debug_log_for_this_row:
-                    print(f"  - 股价为0或负数，无法计算，返回0")
-                return 0
-
-            cash_div_per_share = last_year_data.get('cash_div_tax', 0)
-            bonus_rate_per_share = last_year_data.get('stk_bo_rate', 0)
-            conversion_rate_per_share = last_year_data.get('stk_co_rate', 0)
-
-            # --- 核心计算 (已修正) ---
-            # 静态股息率(%) = ((C / 10) / (1 + S / 10)) / P * 100
-            # C (每10股派息) 对应 cash_div_for_10_shares。
-            # S (每10股送转) 对应 bonus_rate_per_share + conversion_rate_per_share。
-            # P (当前股价) 对应 current_price (使用前复权价)。
-            share_adjustment_factor = 1.0 + (bonus_rate_per_share + conversion_rate_per_share) / 10.0
-            adjusted_dividend_per_share = cash_div_per_share / share_adjustment_factor
-            yield_ratio = adjusted_dividend_per_share / current_price
-            final_yield_percentage = yield_ratio * 100
-
-            if is_debug_log_for_this_row:
-                print(f"  - 找到 {row['year'] - 1} 年的分红数据: {last_year_data}")
-                print(f"  - (修正后)步骤1: 计算 '每股现金分红' = {cash_div_per_share:.4f}")
-                print(f"  - (修正后)步骤2: 计算 '股本调整因子' = 1.0 + ({bonus_rate_per_share} + {conversion_rate_per_share}) / 10.0 = {share_adjustment_factor:.4f}")
-                print(f"  - (修正后)步骤3: 计算 '调整后每股分红' = {cash_div_per_share:.4f} / {share_adjustment_factor:.4f} = {adjusted_dividend_per_share:.4f}")
-                print(f"  - (修正后)步骤4: 最终计算 '自定义股息率(%)' = {adjusted_dividend_per_share:.4f} / {current_price:.2f} * 100 = {final_yield_percentage:.4f}%")
-                print(f"  - --- 对比: Tushare (dv_ttm) = {row['股息率(TTM,Tushare)(%)']:.4f}%")
-
-            return final_yield_percentage
-
-        df['股息率(%)'] = df.apply(calculate_custom_dividend, axis=1)
+        # 仅计算均线，股息率计算已移至 calculator_dividend.py
+        print("正在计算技术指标：MA均线...")
+        for p in ma_params:
+            df[f'MA{p}'] = talib.MA(df['收盘价(元)'], timeperiod=p)
+            df[f'MA{p}'] = df[f'MA{p}'].round(4)
+        print("均线计算完成。")
 
         # --- 第三步：最终列选择与排序 (定型) ---
         # 按照逻辑关系重新组织所有列的顺序，方便查看
@@ -234,10 +243,9 @@ def update_stock_data():
             '总股本(万股)', '流通股本(万股)', '自由流通股本(万股)',
             '总市值(万元)', '流通市值(万元)',
 
-            # 分红与股息率
+            # 分红与股息率 (自定义的股息率将由 calculator_dividend.py 添加)
             '股息率(Tushare)(%)',
             '股息率(TTM,Tushare)(%)',
-            '股息率(%)',
         ]
         
         # 将均线列加入到最终列名列表
@@ -250,9 +258,30 @@ def update_stock_data():
         final_df.to_csv(output_file, index=False, encoding='utf-8-sig', float_format='%.4f')
 
         print("-" * 30)
-        print(f"个股历史数据更新完成！总共 {len(final_df)} 条记录。")
+        print(f"个股基础历史数据更新完成！总共 {len(final_df)} 条记录。")
         print(f"数据已保存至: {output_file}")
         print("-" * 30)
+
+        # --- 第四步：调用独立脚本计算股息率 ---
+        print("\n--- 开始调用独立脚本计算自定义股息率 ---")
+        script_path = os.path.join(os.path.dirname(__file__), 'calculator_dividend.py')
+        try:
+            # 使用 subprocess.run 来执行脚本，并捕获输出
+            result = subprocess.run(
+                ['python', script_path, '--code', stock_code],
+                check=True, # 如果脚本返回非0退出码，则抛出异常
+                capture_output=True, # 捕获标准输出和标准错误
+                text=True, # 以文本模式处理输出
+                encoding='utf-8'
+            )
+            print("股息率计算脚本执行成功。")
+            print("脚本输出:\n" + result.stdout)
+        except subprocess.CalledProcessError as e:
+            print(f"股息率计算脚本执行失败，返回码: {e.returncode}")
+            print("错误信息:\n" + e.stderr)
+        except FileNotFoundError:
+            print(f"错误：找不到股息率计算脚本: {script_path}")
+
     except Exception as e:
         print(f"更新股票 {stock_code} 数据失败: {e}")
         print("请检查股票代码是否正确，以及Tushare接口是否正常。")
@@ -260,8 +289,14 @@ def update_stock_data():
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='单独更新某支股票的历史数据')
     parser.add_argument('--code', type=str, help='需要更新的股票代码, 例如: 600036')
+    parser.add_argument('--force', action='store_true', help='强制刷新，忽略已有的数据和更新日期检查')
     args = parser.parse_args()
     
+    # 如果命令行提供了强制刷新标志，则设置全局配置
+    if args.force:
+        config.FORCE_FULL_DATA_REFRESH = True
+        print("--- 检测到 --force 参数，将强制刷新全部数据 ---")
+
     # 如果命令行提供了股票代码，则使用该代码
     if args.code:
         # 在独立运行时，强制设置当前股票代码，以便config能正确返回路径
@@ -269,4 +304,5 @@ if __name__ == '__main__':
         update_stock_data()
     else:
         # 否则，使用默认配置运行
+        print("未指定股票代码，将使用 config.py 中的默认设置。")
         update_stock_data() 
